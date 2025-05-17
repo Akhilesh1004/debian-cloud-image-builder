@@ -1,7 +1,7 @@
 name: Build Cloud Image
 
 on:
-  workflow_dispatch:
+  push:
 
 jobs:
   build-image:
@@ -9,15 +9,20 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set short commit SHA
+        run: echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libguestfs-tools curl wget
+          sudo apt-get install -y libguestfs-tools curl wget rclone
 
       - name: Download base Debian cloud image
         run: |
-          wget -O debian-12-cloud.qcow2 https://cdimage.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2
+          wget -O debian-12-cloud-${COMMIT_ID}.qcow2 https://cdimage.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2
 
       - name: Allow CI to read kernel image
         run: |
@@ -25,14 +30,17 @@ jobs:
 
       - name: Customize image
         run: |
-          sudo virt-customize -v -x -a debian-12-cloud.qcow2 \
+          sudo virt-customize -a debian-12-cloud-${COMMIT_ID}.qcow2 \
             --install qemu-guest-agent,sudo,vim,nano,btop,mtr \
             --run-command "apt-get -y autoremove --purge && apt-get -y clean" \
             --run-command 'truncate -s 0 /etc/machine-id' \
             --run-command 'rm -f /var/lib/dbus/machine-id'
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: debian-custom-image
-          path: debian-12-cloud.qcow2
+      
+      - name: Upload to Google Drive via rclone
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.RCLONE_CONF_B64 }}" | base64 -d > ~/.config/rclone/rclone.conf
+          rclone mkdir gdrive:debian_images --drive-root-folder-id 10kZid4ktL4ohbWWlbkxCc08pM7iBZ49m
+          rclone copy debian-12-cloud-${COMMIT_ID}.qcow2 gdrive:debian_images/ \
+          --drive-root-folder-id 10kZid4ktL4ohbWWlbkxCc08pM7iBZ49m \
+          --progress
