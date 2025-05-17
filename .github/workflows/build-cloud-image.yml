@@ -1,0 +1,43 @@
+name: Build Cloud Image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libguestfs-tools qemu-utils curl wget
+
+      - name: Download base Debian cloud image
+        run: |
+          wget -O debian-12-cloud.qcow2 https://cdimage.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2
+
+      - name: Allow CI to read kernel image
+        run: |
+          sudo dpkg-statoverride --add root root 0644 /boot/vmlinuz-*
+
+      - name: Convert to raw format
+        run: |
+          qemu-img convert -O raw debian-12-cloud.qcow2 debian-12-cloud.raw
+
+      - name: Customize image
+        run: |
+          sudo virt-customize -v -x -a debian-12-cloud.raw \
+            --install qemu-guest-agent,sudo,vim,nano,btop,mtr \
+            --run-command 'systemctl enable qemu-guest-agent' \
+            --run-command 'cloud-init clean' \
+            --run-command 'truncate -s 0 /etc/machine-id' \
+            --run-command 'rm -f /var/lib/dbus/machine-id'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-custom-image
+          path: debian-12-cloud.raw
