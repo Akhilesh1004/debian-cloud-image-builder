@@ -5,7 +5,7 @@ on:
 
 jobs:
   build-image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -13,7 +13,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libguestfs-tools qemu-utils curl wget
+          sudo apt-get install -y libguestfs-tools curl wget
 
       - name: Download base Debian cloud image
         run: |
@@ -23,16 +23,11 @@ jobs:
         run: |
           sudo dpkg-statoverride --add root root 0644 /boot/vmlinuz-*
 
-      - name: Convert to raw format
-        run: |
-          qemu-img convert -O raw debian-12-cloud.qcow2 debian-12-cloud.raw
-
       - name: Customize image
         run: |
-          sudo virt-customize -v -x -a debian-12-cloud.raw \
+          sudo virt-customize -v -x -a debian-12-cloud.qcow2 \
             --install qemu-guest-agent,sudo,vim,nano,btop,mtr \
-            --run-command 'systemctl enable qemu-guest-agent' \
-            --run-command 'cloud-init clean' \
+            --run-command "apt-get -y autoremove --purge && apt-get -y clean" \
             --run-command 'truncate -s 0 /etc/machine-id' \
             --run-command 'rm -f /var/lib/dbus/machine-id'
 
@@ -40,4 +35,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: debian-custom-image
-          path: debian-12-cloud.raw
+          path: debian-12-cloud.qcow2
